@@ -1,11 +1,16 @@
 const io = require('./index.js').io;
-const { VERIFY_USER, USER_CONNECTED, LOGOUT } = require('../Events');
+const { VERIFY_USER, USER_CONNECTED, USER_DISCONNECTED, LOGOUT, COMMUNITY_CHAT, MESSAGE_RECIEVED, MESSAGE_SENT } = require('../Events');
 const { createUser, createMessage, createChat } = require('../Factories');
 
 let connectedUsers = {};
 
+let communityChat = createChat();
+
 module.exports = function(socket) {
+    // console.log('\x1bc');
     console.log('Socket ID: ' + socket.id);
+
+    let sendMessageToChatFromUser;
 
     // Verify Username
     socket.on(VERIFY_USER, (nickname, callback) => {
@@ -21,10 +26,17 @@ module.exports = function(socket) {
         connectedUsers = addUser(connectedUsers, user);
         socket.user = user;
 
+        sendMessageToChatFromUser = sendMessageToChat(user.name);
+
         io.emit(USER_CONNECTED, connectedUsers);
         console.log(connectedUsers)
     });
 
+    function sendMessageToChat(sender) {
+        return (chatId, message) => {
+            io.emit(`${MESSAGE_RECIEVED}-${chatId}`, createMessage({message, sender}));
+        }
+    }
 
     function addUser(userList, user) {
         let newList = Object.assign({}, userList);
@@ -41,5 +53,32 @@ module.exports = function(socket) {
     function isUser(userList, username) {
         return username in userList;
     }
+
+    // User disconnects
+    socket.on('disconnect', () => {
+        if("user" in socket) {
+            connectedUsers = removeUser(connectedUsers, socket.user.name);
+
+            io.emit(USER_DISCONNECTED, connectedUsers);
+            console.log("Disconnect" + connectedUsers)
+        }
+    });
+
+    // User logouts
+    socket.on(LOGOUT, () => {
+        connectedUsers = removeUser(connectedUsers, socket.user.name);
+
+        io.emit(USER_DISCONNECTED, connectedUsers);
+        console.log("Disconnect" + connectedUsers)
+    });
+
+    // Get Community Chat
+    socket.on(COMMUNITY_CHAT, (callback) => {
+        callback(communityChat);
+    });
+
+    socket.on(MESSAGE_SENT, ({chatId, message}) => {
+        sendMessageToChatFromUser(chatId, message);
+    });
 
 }

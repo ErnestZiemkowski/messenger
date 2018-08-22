@@ -7,14 +7,15 @@ const {
     COMMUNITY_CHAT,
     MESSAGE_RECIEVED,
     MESSAGE_SENT,
-    TYPING
+    TYPING,
+    PRIVATE_MESSAGE
 } = require('../Events');
 
 const { createUser, createMessage, createChat } = require('../Factories');
 
 let connectedUsers = {};
 
-let communityChat = createChat();
+let communityChat = createChat({ isCommunity: true });
 
 module.exports = function(socket) {
     // console.log('\x1bc');
@@ -26,15 +27,16 @@ module.exports = function(socket) {
 
     // Verify Username
     socket.on(VERIFY_USER, (nickname, callback) => {
-        if(isUser(connectedUsers ,nickname)) {
+        if(isUser(connectedUsers, nickname)) {
             callback({ isUser: true, user: null });
         } else {
-            callback({ isUser: false, user:createUser({name: nickname})});
+            callback({ isUser: false, user:createUser({name: nickname, socketId: socket.id})});
         }
     });
 
     // User Connects with username
     socket.on(USER_CONNECTED, (user) => {
+        user.socketId = socket.id;
         connectedUsers = addUser(connectedUsers, user);
         socket.user = user;
 
@@ -76,7 +78,18 @@ module.exports = function(socket) {
         sendTypingFromUser(chatId, isTyping);
     });
 
-
+    socket.on(PRIVATE_MESSAGE, ({reciever, sender, activeChat}) => {
+        if(reciever in connectedUsers) {
+            const recieverSocket = connectedUsers[reciever].socketId;
+            if( activeChat === null || activeChat === communityChat.id) {
+                const newChat = createChat({ name: `${reciever}&${sender}`, users: [reciever, sender] });
+                socket.to(recieverSocket).emit(PRIVATE_MESSAGE, newChat);
+                socket.emit(PRIVATE_MESSAGE, newChat);
+            } else {
+                socket.to(recieverSocket).emit(PRIVATE_MESSAGE, activeChat);
+            }
+        }
+    });
 
     
     function sendTypingToChat(user) {
